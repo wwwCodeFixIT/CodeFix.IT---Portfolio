@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSettings } from '../context/SettingsContext';
 
 interface Message {
   id: string;
@@ -26,11 +27,240 @@ interface DashboardStats {
   deviceStats: { device: string; percentage: number }[];
 }
 
+interface GitHubUser {
+  login: string;
+  avatar_url: string;
+  name: string;
+  bio: string;
+  location: string;
+  public_repos: number;
+  followers: number;
+}
+
+interface GitHubData {
+  user: GitHubUser | null;
+  stats: {
+    commits: number;
+    pullRequests: number;
+    issues: number;
+    stars: number;
+  };
+  loading: boolean;
+  error: string | null;
+  lastUpdated: string | null;
+}
+
 export const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'messages' | 'portfolio' | 'analytics'>('overview');
+  const { settings, updateSettings } = useSettings();
+  const [activeTab, setActiveTab] = useState<'overview' | 'messages' | 'portfolio' | 'analytics' | 'github' | 'settings'>('overview');
   const [messages, setMessages] = useState<Message[]>([]);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  
+  // GitHub state
+  const [githubUsername, setGithubUsername] = useState(settings.github?.username || '');
+  const [githubToken, setGithubToken] = useState(settings.github?.token || '');
+  const [githubData, setGithubData] = useState<GitHubData>({
+    user: null,
+    stats: { commits: 0, pullRequests: 0, issues: 0, stars: 0 },
+    loading: false,
+    error: null,
+    lastUpdated: null,
+  });
+  const [githubSaveStatus, setGithubSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  
+  // Settings state
+  const [companyName, setCompanyName] = useState(settings.company?.name || 'CodeFix.IT');
+  const [ownerName, setOwnerName] = useState(settings.company?.ownerName || 'Patryk');
+  const [contactEmail, setContactEmail] = useState(settings.contact?.email || 'wwwcodefixit@gmail.com');
+  const [contactPhone, setContactPhone] = useState(settings.contact?.phone || '+48 883 667 943');
+  const [contactAddress, setContactAddress] = useState(settings.contact?.address || 'Warszawa, Polska');
+  const [socialGithub, setSocialGithub] = useState(settings.social?.github || 'https://github.com/wwwCodeFixIT');
+  const [socialLinkedin, setSocialLinkedin] = useState(settings.social?.linkedin || '');
+  const [settingsSaveStatus, setSettingsSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+
+  // Load GitHub data on mount
+  useEffect(() => {
+    const cached = localStorage.getItem('codefix-github-cache');
+    if (cached) {
+      try {
+        const data = JSON.parse(cached);
+        setGithubData({
+          user: data.user,
+          stats: data.stats,
+          loading: false,
+          error: null,
+          lastUpdated: data.lastUpdated,
+        });
+      } catch {}
+    }
+    
+    if (settings.github?.username) {
+      setGithubUsername(settings.github.username);
+      setGithubToken(settings.github.token || '');
+    }
+  }, [settings.github?.username, settings.github?.token]);
+
+  const fetchGitHubData = async (username: string, token?: string) => {
+    if (!username) return;
+    
+    setGithubData(prev => ({ ...prev, loading: true, error: null }));
+    
+    try {
+      const headers: HeadersInit = {
+        'Accept': 'application/vnd.github.v3+json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Fetch user
+      const userRes = await fetch(`https://api.github.com/users/${username}`, { headers });
+      if (!userRes.ok) {
+        if (userRes.status === 404) throw new Error('Nie znaleziono użytkownika GitHub');
+        if (userRes.status === 403) throw new Error('Przekroczono limit API. Dodaj token.');
+        throw new Error('Błąd połączenia z GitHub');
+      }
+      const user = await userRes.json();
+
+      // Fetch repos for stars
+      const reposRes = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=updated`, { headers });
+      const repos = await reposRes.json();
+      const totalStars = Array.isArray(repos) 
+        ? repos.reduce((sum: number, repo: { stargazers_count?: number }) => sum + (repo.stargazers_count || 0), 0) 
+        : 0;
+
+      // Fetch events for commits/PRs
+      const eventsRes = await fetch(`https://api.github.com/users/${username}/events?per_page=100`, { headers });
+      const events = await eventsRes.json();
+      
+      let commits = 0;
+      let pullRequests = 0;
+      let issues = 0;
+
+      if (Array.isArray(events)) {
+        events.forEach((event: { type: string; payload?: { commits?: unknown[] } }) => {
+          if (event.type === 'PushEvent') {
+            commits += event.payload?.commits?.length || 0;
+          } else if (event.type === 'PullRequestEvent') {
+            pullRequests++;
+          } else if (event.type === 'IssuesEvent') {
+            issues++;
+          }
+        });
+      }
+
+      const newData = {
+        user,
+        stats: { commits, pullRequests, issues, stars: totalStars },
+        loading: false,
+        error: null,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      setGithubData(newData);
+
+      // Cache the data
+      localStorage.setItem('codefix-github-cache', JSON.stringify({
+        user,
+        stats: newData.stats,
+        lastUpdated: newData.lastUpdated,
+      }));
+
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Błąd połączenia z GitHub';
+      setGithubData(prev => ({
+        ...prev,
+        loading: false,
+        error: errorMessage,
+      }));
+    }
+  };
+
+  const handleGitHubSave = async () => {
+    if (!githubUsername.trim()) {
+      setGithubData(prev => ({ ...prev, error: 'Podaj nazwę użytkownika GitHub' }));
+      return;
+    }
+
+    setGithubSaveStatus('saving');
+    
+    try {
+      // Test connection first
+      const headers: HeadersInit = { 'Accept': 'application/vnd.github.v3+json' };
+      if (githubToken) headers['Authorization'] = `Bearer ${githubToken}`;
+      
+      const testRes = await fetch(`https://api.github.com/users/${githubUsername}`, { headers });
+      if (!testRes.ok) {
+        if (testRes.status === 404) throw new Error('Nie znaleziono użytkownika GitHub');
+        if (testRes.status === 401) throw new Error('Nieprawidłowy token');
+        throw new Error('Błąd połączenia');
+      }
+
+      // Save settings
+      updateSettings({
+        ...settings,
+        github: {
+          username: githubUsername,
+          token: githubToken || '',
+        },
+      });
+
+      // Clear old cache
+      localStorage.removeItem('codefix-github-cache');
+
+      // Fetch new data
+      await fetchGitHubData(githubUsername, githubToken);
+      
+      setGithubSaveStatus('success');
+      setTimeout(() => setGithubSaveStatus('idle'), 3000);
+    } catch (err) {
+      setGithubSaveStatus('error');
+      const errorMessage = err instanceof Error ? err.message : 'Błąd połączenia';
+      setGithubData(prev => ({ ...prev, error: errorMessage }));
+      setTimeout(() => setGithubSaveStatus('idle'), 3000);
+    }
+  };
+
+  const handleSettingsSave = () => {
+    setSettingsSaveStatus('saving');
+    
+    try {
+      updateSettings({
+        ...settings,
+        company: {
+          ...settings.company,
+          name: companyName,
+          ownerName: ownerName,
+        },
+        contact: {
+          ...settings.contact,
+          email: contactEmail,
+          phone: contactPhone,
+          address: contactAddress,
+        },
+        social: {
+          ...settings.social,
+          github: socialGithub,
+          linkedin: socialLinkedin,
+        },
+      });
+      
+      setSettingsSaveStatus('success');
+      setTimeout(() => setSettingsSaveStatus('idle'), 3000);
+    } catch {
+      setSettingsSaveStatus('error');
+      setTimeout(() => setSettingsSaveStatus('idle'), 3000);
+    }
+  };
+
+  const handleRefresh = () => {
+    if (activeTab === 'github' && githubUsername) {
+      fetchGitHubData(githubUsername, githubToken);
+    } else {
+      window.location.reload();
+    }
+  };
 
   useEffect(() => {
     // Load messages from localStorage
@@ -73,7 +303,7 @@ export const AdminDashboard = () => {
     const visits = analyticsData ? JSON.parse(analyticsData) : [];
     
     const today = new Date().toDateString();
-    const todayVisits = visits.filter((v: any) => new Date(v.timestamp).toDateString() === today).length;
+    const todayVisits = visits.filter((v: { timestamp: string }) => new Date(v.timestamp).toDateString() === today).length;
 
     setStats({
       totalVisits: Math.max(visits.length, 127),
@@ -123,8 +353,10 @@ export const AdminDashboard = () => {
   const tabs = [
     { id: 'overview' as const, label: 'Przegląd', icon: '📊' },
     { id: 'messages' as const, label: 'Wiadomości', icon: '📧', badge: messages.filter(m => !m.read).length },
+    { id: 'github' as const, label: 'GitHub', icon: '🐙', status: githubData.user ? 'connected' : 'disconnected' },
     { id: 'portfolio' as const, label: 'Portfolio', icon: '💼' },
     { id: 'analytics' as const, label: 'Analityka', icon: '📈' },
+    { id: 'settings' as const, label: 'Ustawienia', icon: '⚙️' },
   ];
 
   return (
@@ -142,10 +374,18 @@ export const AdminDashboard = () => {
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <button className="p-2 hover:bg-zinc-800 rounded-lg transition-colors" title="Odśwież">
+              <button 
+                onClick={handleRefresh}
+                className="p-2 hover:bg-zinc-800 rounded-lg transition-colors" 
+                title="Odśwież"
+              >
                 🔄
               </button>
-              <button className="p-2 hover:bg-zinc-800 rounded-lg transition-colors" title="Ustawienia">
+              <button 
+                onClick={() => setActiveTab('settings')}
+                className="p-2 hover:bg-zinc-800 rounded-lg transition-colors" 
+                title="Ustawienia"
+              >
                 ⚙️
               </button>
             </div>
@@ -170,6 +410,11 @@ export const AdminDashboard = () => {
                     {tab.badge}
                   </span>
                 )}
+                {tab.status && (
+                  <span className={`w-2 h-2 rounded-full ${
+                    tab.status === 'connected' ? 'bg-green-500' : 'bg-yellow-500'
+                  }`} />
+                )}
               </button>
             ))}
           </div>
@@ -188,6 +433,25 @@ export const AdminDashboard = () => {
               exit={{ opacity: 0, y: -20 }}
               className="space-y-6"
             >
+              {/* GitHub Warning */}
+              {!githubData.user && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">⚠️</span>
+                    <div>
+                      <p className="font-medium text-yellow-400">GitHub nie skonfigurowany</p>
+                      <p className="text-sm text-zinc-400">Połącz swoje konto GitHub, aby wyświetlać statystyki</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('github')}
+                    className="px-4 py-2 bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition-colors"
+                  >
+                    Konfiguruj
+                  </button>
+                </div>
+              )}
+
               {/* Stats Grid */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
@@ -407,6 +671,168 @@ export const AdminDashboard = () => {
             </motion.div>
           )}
 
+          {/* GitHub Tab */}
+          {activeTab === 'github' && (
+            <motion.div
+              key="github"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              {/* GitHub Configuration */}
+              <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">🐙</span>
+                    <div>
+                      <h3 className="text-lg font-semibold">Konfiguracja GitHub</h3>
+                      <p className="text-sm text-zinc-400">Połącz swoje konto GitHub, aby wyświetlać statystyki</p>
+                    </div>
+                  </div>
+                  {githubData.user && (
+                    <span className="px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-500" />
+                      Połączono
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Nazwa użytkownika GitHub <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={githubUsername}
+                      onChange={(e) => setGithubUsername(e.target.value)}
+                      placeholder="np. wwwCodeFixIT"
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Personal Access Token <span className="text-zinc-500">(opcjonalnie)</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={githubToken}
+                      onChange={(e) => setGithubToken(e.target.value)}
+                      placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
+                    />
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Token zwiększa limit API z 60 do 5000 zapytań/h. 
+                      <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" className="text-red-400 hover:underline ml-1">
+                        Utwórz token →
+                      </a>
+                    </p>
+                  </div>
+                </div>
+
+                {githubData.error && (
+                  <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400">
+                    ⚠️ {githubData.error}
+                  </div>
+                )}
+
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={handleGitHubSave}
+                    disabled={githubSaveStatus === 'saving' || !githubUsername.trim()}
+                    className={`px-6 py-3 rounded-xl font-semibold transition-all inline-flex items-center gap-2 ${
+                      githubSaveStatus === 'success'
+                        ? 'bg-green-500 text-white'
+                        : githubSaveStatus === 'error'
+                        ? 'bg-red-500 text-white'
+                        : 'bg-gradient-to-r from-red-600 to-red-500 text-white hover:shadow-lg hover:shadow-red-500/25'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {githubSaveStatus === 'saving' ? (
+                      <>
+                        <span className="animate-spin">⏳</span>
+                        Łączenie...
+                      </>
+                    ) : githubSaveStatus === 'success' ? (
+                      <>
+                        <span>✓</span>
+                        Połączono!
+                      </>
+                    ) : githubSaveStatus === 'error' ? (
+                      <>
+                        <span>✗</span>
+                        Błąd
+                      </>
+                    ) : (
+                      <>
+                        <span>🔗</span>
+                        Połącz z GitHub
+                      </>
+                    )}
+                  </button>
+                  
+                  {githubData.user && (
+                    <button
+                      onClick={() => fetchGitHubData(githubUsername, githubToken)}
+                      disabled={githubData.loading}
+                      className="px-6 py-3 bg-zinc-800 text-white rounded-xl hover:bg-zinc-700 transition-colors inline-flex items-center gap-2"
+                    >
+                      <span className={githubData.loading ? 'animate-spin' : ''}>🔄</span>
+                      Odśwież dane
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* GitHub Stats Preview */}
+              {githubData.user && (
+                <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold">Podgląd statystyk</h3>
+                    {githubData.lastUpdated && (
+                      <span className="text-xs text-zinc-500">
+                        Ostatnia aktualizacja: {new Date(githubData.lastUpdated).toLocaleString('pl-PL')}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Profile */}
+                  <div className="flex items-center gap-4 mb-6 pb-6 border-b border-zinc-800">
+                    <img
+                      src={githubData.user.avatar_url}
+                      alt={githubData.user.name}
+                      className="w-16 h-16 rounded-full border-2 border-red-500"
+                    />
+                    <div>
+                      <h4 className="font-semibold text-lg">{githubData.user.name || githubData.user.login}</h4>
+                      <p className="text-zinc-400">@{githubData.user.login}</p>
+                      {githubData.user.bio && (
+                        <p className="text-sm text-zinc-500 mt-1">{githubData.user.bio}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: 'Repozytoria', value: githubData.user.public_repos, icon: '📁' },
+                      { label: 'Followers', value: githubData.user.followers, icon: '👥' },
+                      { label: 'Commits (30d)', value: githubData.stats.commits, icon: '💻' },
+                      { label: 'Stars', value: githubData.stats.stars, icon: '⭐' },
+                    ].map((stat) => (
+                      <div key={stat.label} className="bg-zinc-800/50 rounded-xl p-4 text-center">
+                        <span className="text-2xl block mb-2">{stat.icon}</span>
+                        <p className="text-2xl font-bold">{stat.value}</p>
+                        <p className="text-xs text-zinc-400">{stat.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
           {/* Portfolio Tab */}
           {activeTab === 'portfolio' && (
             <motion.div
@@ -480,6 +906,146 @@ export const AdminDashboard = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <motion.div
+              key="settings"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              {/* Company Settings */}
+              <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6">
+                <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                  <span>🏢</span> Dane firmy
+                </h3>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Nazwa firmy</label>
+                    <input
+                      type="text"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Właściciel</label>
+                    <input
+                      type="text"
+                      value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)}
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact Settings */}
+              <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6">
+                <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                  <span>📧</span> Dane kontaktowe
+                </h3>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Email</label>
+                    <input
+                      type="email"
+                      value={contactEmail}
+                      onChange={(e) => setContactEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Telefon</label>
+                    <input
+                      type="tel"
+                      value={contactPhone}
+                      onChange={(e) => setContactPhone(e.target.value)}
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-2">Adres</label>
+                    <input
+                      type="text"
+                      value={contactAddress}
+                      onChange={(e) => setContactAddress(e.target.value)}
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Social Media Settings */}
+              <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6">
+                <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                  <span>🌐</span> Social Media
+                </h3>
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">GitHub URL</label>
+                    <input
+                      type="url"
+                      value={socialGithub}
+                      onChange={(e) => setSocialGithub(e.target.value)}
+                      placeholder="https://github.com/username"
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">LinkedIn URL</label>
+                    <input
+                      type="url"
+                      value={socialLinkedin}
+                      onChange={(e) => setSocialLinkedin(e.target.value)}
+                      placeholder="https://linkedin.com/in/username"
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl focus:border-red-500 focus:ring-1 focus:ring-red-500 outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Save Button */}
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSettingsSave}
+                  disabled={settingsSaveStatus === 'saving'}
+                  className={`px-8 py-3 rounded-xl font-semibold transition-all inline-flex items-center gap-2 ${
+                    settingsSaveStatus === 'success'
+                      ? 'bg-green-500 text-white'
+                      : settingsSaveStatus === 'error'
+                      ? 'bg-red-500 text-white'
+                      : 'bg-gradient-to-r from-red-600 to-red-500 text-white hover:shadow-lg hover:shadow-red-500/25'
+                  } disabled:opacity-50`}
+                >
+                  {settingsSaveStatus === 'saving' ? (
+                    <>
+                      <span className="animate-spin">⏳</span>
+                      Zapisywanie...
+                    </>
+                  ) : settingsSaveStatus === 'success' ? (
+                    <>
+                      <span>✓</span>
+                      Zapisano!
+                    </>
+                  ) : settingsSaveStatus === 'error' ? (
+                    <>
+                      <span>✗</span>
+                      Błąd
+                    </>
+                  ) : (
+                    <>
+                      <span>💾</span>
+                      Zapisz zmiany
+                    </>
+                  )}
+                </button>
               </div>
             </motion.div>
           )}
