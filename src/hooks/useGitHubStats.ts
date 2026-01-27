@@ -157,7 +157,7 @@ function saveToCache(data: Partial<GitHubStats>): void {
 // SETTINGS STORAGE KEY
 // ============================================
 
-const SETTINGS_STORAGE_KEY = 'codefix_settings_v2';
+const SETTINGS_STORAGE_KEY = 'codefix_settings_v3';
 const CACHE_TTL = 3600000; // 1 hour
 
 interface StoredSettings {
