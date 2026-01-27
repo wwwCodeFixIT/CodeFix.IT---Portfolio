@@ -1,13 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLanguage } from '../context/LanguageContext';
+import { useAdmin } from '../context/AdminContext';
 
 interface Command {
   id: string;
   label: string;
+  labelEn: string;
   icon: string;
   category: string;
+  categoryEn: string;
   action: () => void;
   shortcut?: string;
+  adminOnly?: boolean;
 }
 
 interface CommandPaletteProps {
@@ -18,29 +23,8 @@ interface CommandPaletteProps {
 export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const [search, setSearch] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-
-  const commands: Command[] = [
-    // Navigation
-    { id: 'home', label: 'Przejdź do strony głównej', icon: '🏠', category: 'Nawigacja', action: () => scrollTo('hero'), shortcut: 'G H' },
-    { id: 'services', label: 'Przejdź do usług', icon: '⚡', category: 'Nawigacja', action: () => scrollTo('uslugi'), shortcut: 'G S' },
-    { id: 'portfolio', label: 'Przejdź do portfolio', icon: '💼', category: 'Nawigacja', action: () => scrollTo('portfolio'), shortcut: 'G P' },
-    { id: 'contact', label: 'Przejdź do kontaktu', icon: '📧', category: 'Nawigacja', action: () => scrollTo('kontakt'), shortcut: 'G C' },
-    { id: 'blog', label: 'Przejdź do bloga', icon: '📝', category: 'Nawigacja', action: () => scrollTo('blog'), shortcut: 'G B' },
-    { id: 'playground', label: 'Otwórz Code Playground', icon: '🎮', category: 'Nawigacja', action: () => scrollTo('playground'), shortcut: 'G L' },
-    
-    // Actions
-    { id: 'theme-dark', label: 'Ustaw ciemny motyw', icon: '🌙', category: 'Motyw', action: () => setTheme('dark') },
-    { id: 'theme-light', label: 'Ustaw jasny motyw', icon: '☀️', category: 'Motyw', action: () => setTheme('light') },
-    { id: 'theme-system', label: 'Ustaw motyw systemowy', icon: '💻', category: 'Motyw', action: () => setTheme('system') },
-    
-    // Tools
-    { id: 'estimator', label: 'Otwórz kalkulator wyceny', icon: '🧮', category: 'Narzędzia', action: () => scrollTo('estimator'), shortcut: 'G E' },
-    { id: 'status', label: 'Sprawdź status usług', icon: '📊', category: 'Narzędzia', action: () => scrollTo('status') },
-    
-    // External
-    { id: 'github', label: 'Otwórz GitHub', icon: '🐙', category: 'Zewnętrzne', action: () => window.open('https://github.com', '_blank') },
-    { id: 'linkedin', label: 'Otwórz LinkedIn', icon: '💼', category: 'Zewnętrzne', action: () => window.open('https://linkedin.com', '_blank') },
-  ];
+  const { language } = useLanguage();
+  const { isAdmin, openLoginModal } = useAdmin();
 
   const scrollTo = (id: string) => {
     const element = document.getElementById(id);
@@ -50,20 +34,190 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
     onClose();
   };
 
-  const setTheme = (theme: string) => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('codefix-theme', theme);
-    onClose();
-  };
+  const commands: Command[] = [
+    // Nawigacja - 8 głównych sekcji
+    { 
+      id: 'home', 
+      label: 'Przejdź do strony głównej', 
+      labelEn: 'Go to homepage',
+      icon: '🏠', 
+      category: 'Nawigacja', 
+      categoryEn: 'Navigation',
+      action: () => scrollTo('hero'), 
+      shortcut: 'G H' 
+    },
+    { 
+      id: 'services', 
+      label: 'Przejdź do usług', 
+      labelEn: 'Go to services',
+      icon: '⚡', 
+      category: 'Nawigacja', 
+      categoryEn: 'Navigation',
+      action: () => scrollTo('uslugi'), 
+      shortcut: 'G S' 
+    },
+    { 
+      id: 'portfolio', 
+      label: 'Przejdź do portfolio', 
+      labelEn: 'Go to portfolio',
+      icon: '💼', 
+      category: 'Nawigacja', 
+      categoryEn: 'Navigation',
+      action: () => scrollTo('portfolio'), 
+      shortcut: 'G P' 
+    },
+    { 
+      id: 'technologies', 
+      label: 'Przejdź do technologii', 
+      labelEn: 'Go to technologies',
+      icon: '🛠️', 
+      category: 'Nawigacja', 
+      categoryEn: 'Navigation',
+      action: () => scrollTo('technologies'), 
+      shortcut: 'G T' 
+    },
+    { 
+      id: 'testimonials', 
+      label: 'Przejdź do opinii', 
+      labelEn: 'Go to testimonials',
+      icon: '⭐', 
+      category: 'Nawigacja', 
+      categoryEn: 'Navigation',
+      action: () => scrollTo('testimonials'), 
+      shortcut: 'G O' 
+    },
+    { 
+      id: 'faq', 
+      label: 'Przejdź do FAQ', 
+      labelEn: 'Go to FAQ',
+      icon: '❓', 
+      category: 'Nawigacja', 
+      categoryEn: 'Navigation',
+      action: () => scrollTo('faq'), 
+      shortcut: 'G F' 
+    },
+    { 
+      id: 'contact', 
+      label: 'Przejdź do kontaktu', 
+      labelEn: 'Go to contact',
+      icon: '📧', 
+      category: 'Nawigacja', 
+      categoryEn: 'Navigation',
+      action: () => scrollTo('kontakt'), 
+      shortcut: 'G C' 
+    },
+    
+    // Akcje
+    { 
+      id: 'start-project', 
+      label: 'Rozpocznij projekt', 
+      labelEn: 'Start a project',
+      icon: '🚀', 
+      category: 'Akcje', 
+      categoryEn: 'Actions',
+      action: () => scrollTo('kontakt')
+    },
+    { 
+      id: 'calculator', 
+      label: 'Otwórz kalkulator wyceny', 
+      labelEn: 'Open price calculator',
+      icon: '🧮', 
+      category: 'Akcje', 
+      categoryEn: 'Actions',
+      action: () => {
+        scrollTo('kontakt');
+        // Przełącz na zakładkę kalkulatora po scrollu
+        setTimeout(() => {
+          const calculatorTab = document.querySelector('[data-tab="calculator"]') as HTMLButtonElement;
+          if (calculatorTab) calculatorTab.click();
+        }, 500);
+      }
+    },
+    
+    // Zewnętrzne
+    { 
+      id: 'github', 
+      label: 'Otwórz GitHub', 
+      labelEn: 'Open GitHub',
+      icon: '🐙', 
+      category: 'Zewnętrzne', 
+      categoryEn: 'External',
+      action: () => { window.open('https://github.com/wwwCodeFixIT', '_blank'); onClose(); }
+    },
+    { 
+      id: 'email', 
+      label: 'Wyślij email', 
+      labelEn: 'Send email',
+      icon: '📧', 
+      category: 'Zewnętrzne', 
+      categoryEn: 'External',
+      action: () => { window.open('mailto:wwwcodefixit@gmail.com', '_blank'); onClose(); }
+    },
+    { 
+      id: 'phone', 
+      label: 'Zadzwoń', 
+      labelEn: 'Call',
+      icon: '📱', 
+      category: 'Zewnętrzne', 
+      categoryEn: 'External',
+      action: () => { window.open('tel:+48883667943', '_blank'); onClose(); }
+    },
+    
+    // Admin
+    { 
+      id: 'admin-login', 
+      label: 'Panel administratora', 
+      labelEn: 'Admin panel',
+      icon: '🔐', 
+      category: 'Admin', 
+      categoryEn: 'Admin',
+      action: () => { 
+        if (isAdmin) {
+          window.location.hash = '#/admin/dashboard';
+        } else {
+          openLoginModal();
+        }
+        onClose(); 
+      },
+      shortcut: '⌘⇧A'
+    },
+    { 
+      id: 'admin-dashboard', 
+      label: 'Otwórz dashboard', 
+      labelEn: 'Open dashboard',
+      icon: '📊', 
+      category: 'Admin', 
+      categoryEn: 'Admin',
+      action: () => { 
+        if (isAdmin) {
+          window.location.hash = '#/admin/dashboard';
+        } else {
+          openLoginModal();
+        }
+        onClose(); 
+      },
+      shortcut: '⌘⇧D',
+      adminOnly: true
+    },
+  ];
 
-  const filteredCommands = commands.filter(cmd =>
-    cmd.label.toLowerCase().includes(search.toLowerCase()) ||
-    cmd.category.toLowerCase().includes(search.toLowerCase())
-  );
+  // Filtruj komendy - ukryj adminOnly jeśli nie jest adminem
+  const availableCommands = commands.filter(cmd => {
+    if (cmd.adminOnly && !isAdmin) return false;
+    return true;
+  });
+
+  const filteredCommands = availableCommands.filter(cmd => {
+    const label = language === 'pl' ? cmd.label : cmd.labelEn;
+    const category = language === 'pl' ? cmd.category : cmd.categoryEn;
+    return label.toLowerCase().includes(search.toLowerCase()) ||
+           category.toLowerCase().includes(search.toLowerCase());
+  });
 
   const groupedCommands = filteredCommands.reduce((acc, cmd) => {
-    if (!acc[cmd.category]) acc[cmd.category] = [];
-    acc[cmd.category].push(cmd);
+    const category = language === 'pl' ? cmd.category : cmd.categoryEn;
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(cmd);
     return acc;
   }, {} as Record<string, Command[]>);
 
@@ -140,7 +294,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                 </div>
                 <input
                   type="text"
-                  placeholder="Wpisz komendę lub szukaj..."
+                  placeholder={language === 'pl' ? 'Wpisz komendę lub szukaj...' : 'Type a command or search...'}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="flex-1 bg-transparent text-white placeholder-zinc-500 outline-none text-lg"
@@ -159,6 +313,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                     {cmds.map((cmd) => {
                       const globalIndex = flatCommands.findIndex(c => c.id === cmd.id);
                       const isSelected = globalIndex === selectedIndex;
+                      const label = language === 'pl' ? cmd.label : cmd.labelEn;
                       
                       return (
                         <button
@@ -172,7 +327,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                           }`}
                         >
                           <span className="text-xl">{cmd.icon}</span>
-                          <span className="flex-1 text-left">{cmd.label}</span>
+                          <span className="flex-1 text-left">{label}</span>
                           {cmd.shortcut && (
                             <div className="flex gap-1">
                               {cmd.shortcut.split(' ').map((key, i) => (
@@ -191,7 +346,7 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                 {filteredCommands.length === 0 && (
                   <div className="p-8 text-center text-zinc-500">
                     <div className="text-4xl mb-2">🔍</div>
-                    <p>Nie znaleziono komend</p>
+                    <p>{language === 'pl' ? 'Nie znaleziono komend' : 'No commands found'}</p>
                   </div>
                 )}
               </div>
@@ -201,11 +356,11 @@ export default function CommandPalette({ isOpen, onClose }: CommandPaletteProps)
                 <div className="flex items-center gap-4 text-xs text-zinc-500">
                   <span className="flex items-center gap-1">
                     <kbd className="px-1.5 py-0.5 bg-zinc-800 rounded">↑↓</kbd>
-                    Nawiguj
+                    {language === 'pl' ? 'Nawiguj' : 'Navigate'}
                   </span>
                   <span className="flex items-center gap-1">
                     <kbd className="px-1.5 py-0.5 bg-zinc-800 rounded">↵</kbd>
-                    Wybierz
+                    {language === 'pl' ? 'Wybierz' : 'Select'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
