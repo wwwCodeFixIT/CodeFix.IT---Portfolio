@@ -1,9 +1,18 @@
 import { motion } from 'framer-motion';
 import { useGitHubStats } from '../hooks/useGitHubStats';
 import { useSettings } from '../context/SettingsContext';
+import { useAdmin } from '../context/AdminContext';
+import { useLanguage } from '../context/LanguageContext';
 
-export function GitHubStats() {
+interface GitHubStatsProps {
+  onOpenDashboard?: () => void;
+}
+
+export function GitHubStats({ onOpenDashboard }: GitHubStatsProps) {
   const { isConfigured } = useSettings();
+  const { isAdmin, openLoginModal } = useAdmin();
+  const { language } = useLanguage();
+  
   const {
     user,
     repos,
@@ -29,11 +38,11 @@ export function GitHubStats() {
   const topLanguages = Object.entries(languages).slice(0, 6);
 
   const statCards = [
-    { label: 'Commits', value: totalCommits, icon: '📝' },
+    { label: language === 'pl' ? 'Commits' : 'Commits', value: totalCommits, icon: '📝' },
     { label: 'Pull Requests', value: totalPRs, icon: '🔀' },
     { label: 'Issues', value: totalIssues, icon: '🐛' },
-    { label: 'Gwiazdki', value: totalStars, icon: '⭐' },
-    { label: 'Repozytoria', value: repos.filter(r => !r.fork).length, icon: '📦' },
+    { label: language === 'pl' ? 'Gwiazdki' : 'Stars', value: totalStars, icon: '⭐' },
+    { label: language === 'pl' ? 'Repozytoria' : 'Repositories', value: repos.filter(r => !r.fork).length, icon: '📦' },
     { label: 'Followers', value: user?.followers || 0, icon: '👥' },
   ];
 
@@ -42,6 +51,20 @@ export function GitHubStats() {
     return num.toString();
   };
 
+  const handleConfigure = () => {
+    if (isAdmin) {
+      // Otwórz dashboard na zakładce GitHub
+      if (onOpenDashboard) {
+        onOpenDashboard();
+      } else {
+        window.location.hash = '#/admin/dashboard';
+      }
+    } else {
+      openLoginModal();
+    }
+  };
+
+  // Błąd lub brak konfiguracji
   if (error && !user) {
     return (
       <section id="github" className="py-20 lg:py-32 relative">
@@ -55,18 +78,36 @@ export function GitHubStats() {
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4">
               GitHub <span className="text-red-500">Stats</span>
             </h2>
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 max-w-md mx-auto mt-8">
-              <p className="text-red-400 mb-4">{error}</p>
+            
+            <div className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-8 max-w-md mx-auto mt-8">
+              <div className="text-5xl mb-4">🔗</div>
+              <p className="text-gray-400 mb-6">
+                {language === 'pl' 
+                  ? 'Połącz konto GitHub, aby wyświetlić statystyki' 
+                  : 'Connect GitHub account to display statistics'}
+              </p>
+              
               <button
-                onClick={refetch}
-                className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+                onClick={handleConfigure}
+                className="px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-semibold rounded-xl transition-all hover:shadow-lg hover:shadow-red-500/25 inline-flex items-center gap-2"
               >
-                Spróbuj ponownie
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                </svg>
+                {isAdmin 
+                  ? (language === 'pl' ? 'Konfiguruj GitHub' : 'Configure GitHub')
+                  : (language === 'pl' ? 'Zaloguj się jako admin' : 'Login as admin')
+                }
               </button>
+              
+              {!isAdmin && (
+                <p className="text-gray-600 text-sm mt-4">
+                  {language === 'pl' 
+                    ? 'Skrót: Ctrl+Shift+A' 
+                    : 'Shortcut: Ctrl+Shift+A'}
+                </p>
+              )}
             </div>
-            <p className="text-gray-500 mt-4 text-sm">
-              Skonfiguruj nazwę użytkownika w <code className="text-red-400">src/config/settings.ts</code>
-            </p>
           </motion.div>
         </div>
       </section>
@@ -91,24 +132,26 @@ export function GitHubStats() {
         >
           <span className="inline-flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full text-sm text-gray-400 mb-6">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            Aktywny na GitHub
+            {language === 'pl' ? 'Aktywny na GitHub' : 'Active on GitHub'}
           </span>
           <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4">
             GitHub <span className="text-red-500">Activity</span>
           </h2>
           <p className="text-gray-400 max-w-2xl mx-auto">
-            Prawdziwe statystyki z mojego konta GitHub. Dane aktualizowane automatycznie.
+            {language === 'pl' 
+              ? 'Prawdziwe statystyki z mojego konta GitHub. Dane aktualizowane automatycznie.'
+              : 'Real statistics from my GitHub account. Data updated automatically.'}
           </p>
 
           {lastUpdated && (
             <p className="text-gray-600 text-sm mt-4">
-              Ostatnia aktualizacja: {lastUpdated.toLocaleTimeString()}
+              {language === 'pl' ? 'Ostatnia aktualizacja:' : 'Last updated:'} {lastUpdated.toLocaleTimeString()}
               <button
                 onClick={refetch}
                 className="ml-2 text-red-500 hover:text-red-400 transition-colors"
                 disabled={isLoading}
               >
-                {isLoading ? '⏳' : '🔄'} Odśwież
+                {isLoading ? '⏳' : '🔄'} {language === 'pl' ? 'Odśwież' : 'Refresh'}
               </button>
             </p>
           )}
@@ -151,7 +194,7 @@ export function GitHubStats() {
                   rel="noopener noreferrer"
                   className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-sm"
                 >
-                  Zobacz profil →
+                  {language === 'pl' ? 'Zobacz profil' : 'View profile'} →
                 </a>
               </div>
             </motion.div>
@@ -185,8 +228,8 @@ export function GitHubStats() {
                 className="bg-gradient-to-r from-orange-500/20 to-red-500/20 rounded-xl p-6 text-center border border-orange-500/20"
               >
                 <div className="text-4xl mb-2">🔥</div>
-                <div className="text-3xl font-bold">{currentStreak} dni</div>
-                <div className="text-gray-400">Aktualna seria</div>
+                <div className="text-3xl font-bold">{currentStreak} {language === 'pl' ? 'dni' : 'days'}</div>
+                <div className="text-gray-400">{language === 'pl' ? 'Aktualna seria' : 'Current streak'}</div>
               </motion.div>
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
@@ -195,8 +238,8 @@ export function GitHubStats() {
                 className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl p-6 text-center border border-purple-500/20"
               >
                 <div className="text-4xl mb-2">🏆</div>
-                <div className="text-3xl font-bold">{longestStreak} dni</div>
-                <div className="text-gray-400">Najdłuższa seria</div>
+                <div className="text-3xl font-bold">{longestStreak} {language === 'pl' ? 'dni' : 'days'}</div>
+                <div className="text-gray-400">{language === 'pl' ? 'Najdłuższa seria' : 'Longest streak'}</div>
               </motion.div>
             </div>
 
@@ -210,7 +253,7 @@ export function GitHubStats() {
               <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 <span>📊</span> Contribution Graph
                 <span className="text-sm font-normal text-gray-500 ml-auto">
-                  Ostatnie 365 dni
+                  {language === 'pl' ? 'Ostatnie 365 dni' : 'Last 365 days'}
                 </span>
               </h3>
               <div className="overflow-x-auto pb-2">
@@ -248,7 +291,7 @@ export function GitHubStats() {
                 </div>
               </div>
               <div className="flex items-center justify-end gap-2 mt-4 text-sm text-gray-500">
-                <span>Mniej</span>
+                <span>{language === 'pl' ? 'Mniej' : 'Less'}</span>
                 <div className="flex gap-1">
                   <div className="w-3 h-3 bg-white/5 rounded-sm" />
                   <div className="w-3 h-3 bg-green-900/50 rounded-sm" />
@@ -256,7 +299,7 @@ export function GitHubStats() {
                   <div className="w-3 h-3 bg-green-500 rounded-sm" />
                   <div className="w-3 h-3 bg-green-400 rounded-sm" />
                 </div>
-                <span>Więcej</span>
+                <span>{language === 'pl' ? 'Więcej' : 'More'}</span>
               </div>
             </motion.div>
 
@@ -336,7 +379,7 @@ export function GitHubStats() {
                       </span>
                     </div>
                     <p className="text-gray-500 text-sm mb-4 line-clamp-2">
-                      {repo.description || 'Brak opisu'}
+                      {repo.description || (language === 'pl' ? 'Brak opisu' : 'No description')}
                     </p>
                     <div className="flex items-center gap-4 text-sm text-gray-500">
                       <span className="flex items-center gap-1">
@@ -358,19 +401,24 @@ export function GitHubStats() {
           </>
         )}
 
-        {/* Config hint */}
-        {!isConfigured && (
+        {/* Config hint - tylko dla admina */}
+        {isAdmin && !isConfigured && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="text-center mt-8 p-6 bg-yellow-500/10 border border-yellow-500/30 rounded-xl"
           >
-            <p className="text-yellow-400">
-              ⚠️ Skonfiguruj swoją nazwę użytkownika GitHub w pliku:
+            <p className="text-yellow-400 mb-4">
+              ⚠️ {language === 'pl' 
+                ? 'Skonfiguruj swoją nazwę użytkownika GitHub w panelu admina' 
+                : 'Configure your GitHub username in admin panel'}
             </p>
-            <code className="text-sm text-yellow-300 bg-yellow-500/20 px-2 py-1 rounded mt-2 inline-block">
-              src/config/settings.ts
-            </code>
+            <button
+              onClick={handleConfigure}
+              className="px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded-lg transition-colors"
+            >
+              {language === 'pl' ? 'Otwórz konfigurację' : 'Open configuration'}
+            </button>
           </motion.div>
         )}
       </div>
